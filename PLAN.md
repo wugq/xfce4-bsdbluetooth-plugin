@@ -103,5 +103,6 @@ Split like blueman (`blueman-applet`, `blueman-manager`,
 - Socket access control: a group, or polkit's "active local session"
   rule as used by other desktop helpers.
 - Test hardware: needs a Bluetooth Classic mouse; test on the A475
-  (RTL8822BE Bluetooth, `ubt0`) with Wi-Fi down until the Wi-Fi driver
-  has coexistence.
+  (RTL8822BE Bluetooth, `ubt0`).  Light traffic works with Wi-Fi up;
+  headphones with 2.4 GHz Wi-Fi may need dynamic coexistence in the
+  Wi-Fi driver.
