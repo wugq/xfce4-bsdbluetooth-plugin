@@ -20,6 +20,7 @@ DESTDIR   ?=
 BINDIR     = $(PREFIX)/bin
 LIBEXECDIR = $(PREFIX)/libexec
 POLKITDIR  = $(PREFIX)/share/polkit-1/actions
+MANDIR     = $(PREFIX)/share/man
 PLUGINDIR  = $(PREFIX)/lib/xfce4/panel/plugins
 PLUGINDATA = $(PREFIX)/share/xfce4/panel/plugins
 
@@ -32,7 +33,7 @@ PANEL_CFLAGS != pkg-config --cflags libxfce4panel-2.0 gtk+-3.0
 PANEL_LIBS   != pkg-config --libs libxfce4panel-2.0 gtk+-3.0
 
 # Files made from templates: @LIBEXECDIR@ filled in
-GENERATED  = org.bsdbt.helper.policy
+GENERATED  = org.bsdbt.helper.policy man/bsdbt.1 man/bsdbt-helper.8
 SUBST      = sed -e 's|@LIBEXECDIR@|$(LIBEXECDIR)|g'
 
 all: $(CLI) $(HELPER) $(PLUGIN) $(GENERATED)
@@ -51,10 +52,16 @@ $(PLUGIN): bsdbluetooth-plugin.c bt.c bt.h
 org.bsdbt.helper.policy: org.bsdbt.helper.policy.in
 	$(SUBST) org.bsdbt.helper.policy.in > $@
 
+man/bsdbt.1: man/bsdbt.1.in
+	$(SUBST) man/bsdbt.1.in > $@
+man/bsdbt-helper.8: man/bsdbt-helper.8.in
+	$(SUBST) man/bsdbt-helper.8.in > $@
+
 install: all
 	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(LIBEXECDIR) \
 	    $(DESTDIR)$(POLKITDIR) $(DESTDIR)$(PLUGINDIR) \
-	    $(DESTDIR)$(PLUGINDATA)
+	    $(DESTDIR)$(PLUGINDATA) $(DESTDIR)$(MANDIR)/man1 \
+	    $(DESTDIR)$(MANDIR)/man8
 	install -m 755 $(CLI) $(DESTDIR)$(BINDIR)/$(CLI)
 	install -m 755 $(HELPER) $(DESTDIR)$(LIBEXECDIR)/$(HELPER)
 	install -m 644 org.bsdbt.helper.policy \
@@ -62,6 +69,8 @@ install: all
 	install -m 755 $(PLUGIN) $(DESTDIR)$(PLUGINDIR)/$(PLUGIN)
 	install -m 644 bsdbluetooth-plugin.desktop \
 	    $(DESTDIR)$(PLUGINDATA)/bsdbluetooth-plugin.desktop
+	install -m 644 man/bsdbt.1 $(DESTDIR)$(MANDIR)/man1/bsdbt.1
+	install -m 644 man/bsdbt-helper.8 $(DESTDIR)$(MANDIR)/man8/bsdbt-helper.8
 
 dist:
 	git archive --prefix=$(PACKAGE)-$(VERSION)/ \

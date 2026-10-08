@@ -7,3 +7,4 @@ local/
 /bsdbt-helper
 /org.bsdbt.helper.policy
 /libbsdbluetooth-plugin.so
+/man/*.[18]

@@ -1,0 +1,158 @@
+.\"-
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 wugq <wugq.dev@gmail.com>
+.\"
+.Dd October 8, 2026
+.Dt BSDBT 1
+.Os
+.Sh NAME
+.Nm bsdbt
+.Nd list, find, pair and remove Bluetooth devices
+.Sh SYNOPSIS
+.Nm
+.Op Fl a Ar adapter
+.Op Cm list
+.Nm
+.Op Fl a Ar adapter
+.Op Fl t Ar seconds
+.Cm scan
+.Nm
+.Op Fl a Ar adapter
+.Op Fl k | Fl p Ar pin
+.Cm pair Ar address
+.Nm
+.Cm remove Ar address
+.Nm
+.Cm disconnect Ar address
+.Nm
+.Fl a Ar device
+.Cm power Cm on | off
+.Sh DESCRIPTION
+The
+.Nm
+utility manages Bluetooth devices with the
+.Fx
+Bluetooth stack and its daemons
+.Xr hcsecd 8
+(pairing, link keys) and
+.Xr bthidd 8
+(keyboards and mice).
+It does the same as the XFCE panel plugin
+.Nm xfce4-bsdbluetooth-plugin .
+.Pp
+.Cm list
+and
+.Cm scan
+run as an ordinary user: they talk to the adapter directly through an HCI
+socket, see
+.Xr ng_hci 4
+and
+.Xr bluetooth 3 .
+The other commands change the system and run
+.Xr bsdbt-helper 8
+through
+.Xr pkexec 1 ;
+polkit allows that to the user at the console without a password.
+Run as root,
+.Nm
+calls the helper directly.
+.Pp
+The options are:
+.Bl -tag -width "-a adapter"
+.It Fl a Ar adapter
+The adapter, by HCI node
+.Pq Dq ubt0hci
+or device
+.Pq Dq ubt0 .
+Without it,
+.Nm
+uses the first adapter that is up.
+.It Fl k
+Pair a keyboard:
+.Nm
+makes up a six-digit PIN and prints it, to be typed on the keyboard
+followed by Enter while pairing.
+.It Fl p Ar pin
+The PIN of the device, from its manual.
+Without
+.Fl k
+or
+.Fl p ,
+the PIN is 0000, which most mice and headsets use.
+.It Fl t Ar seconds
+How long
+.Cm scan
+looks for devices, 1 to 60 seconds; 10 by default.
+.El
+.Pp
+The commands are:
+.Bl -tag -width disconnect
+.It Cm list
+The adapters with their address, name, class, scan mode and open
+connections, and the devices set up with
+.Nm ,
+paired or not, connected or not.
+This is the default.
+.It Cm scan
+Look for devices in range that can be discovered (a device usually has
+to be put in pairing mode) and print their address, kind and name.
+.It Cm pair
+Pair with the device, keep its link key so that it reconnects after a
+reboot, and if it is a keyboard, mouse or other input device, set it up
+for
+.Xr bthidd 8 ,
+which then connects to it.
+.It Cm remove
+Forget the device: its link key and its entries for
+.Xr hcsecd 8
+and
+.Xr bthidd 8 .
+.It Cm disconnect
+Close the connection to the device.
+An input device connects again when it is used.
+.It Cm power
+Start or stop the Bluetooth stack on
+.Ar device
+.Pq Dq service bluetooth start ubt0 .
+.El
+.Sh FILES
+.Bl -tag -width /var/db/bsdbt.devices -compact
+.It Pa /var/db/bsdbt.devices
+the devices set up with
+.Nm ,
+written by
+.Xr bsdbt-helper 8
+.El
+.Sh EXIT STATUS
+0 on success, 1 on error, 2 for a usage error, 4 when the device refused
+to pair (wrong PIN), 5 when it did not answer.
+.Sh EXAMPLES
+Find a mouse in pairing mode and pair it:
+.Bd -literal -offset indent
+$ bsdbt scan
+00:11:22:33:44:55  mouse           Bluetooth Mouse
+$ bsdbt pair 00:11:22:33:44:55
+.Ed
+.Pp
+Pair a keyboard:
+.Bd -literal -offset indent
+$ bsdbt -k pair 00:11:22:33:44:66
+Type 482913 on the keyboard, then press Enter.
+.Ed
+.Sh SEE ALSO
+.Xr pkexec 1 ,
+.Xr bluetooth 3 ,
+.Xr ng_hci 4 ,
+.Xr bsdbt-helper 8 ,
+.Xr bthidd 8 ,
+.Xr hcsecd 8
+.Sh AUTHORS
+.An wugq Aq Mt wugq.dev@gmail.com
+.Sh BUGS
+Only Bluetooth Classic devices work; the
+.Fx
+stack has no Bluetooth Low Energy input devices.
+.Xr hcsecd 8
+has no Secure Simple Pairing, so a device that refuses legacy PIN
+pairing cannot be paired.

@@ -1,0 +1,125 @@
+.\"-
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 wugq <wugq.dev@gmail.com>
+.\"
+.Dd October 8, 2026
+.Dt BSDBT-HELPER 8
+.Os
+.Sh NAME
+.Nm bsdbt-helper
+.Nd pair, set up and remove Bluetooth devices for bsdbt
+.Sh SYNOPSIS
+.Nm @LIBEXECDIR@/bsdbt-helper
+.Cm pair Ar address pin Op Ar name
+.Nm
+.Cm hid Ar address Op Ar name
+.Nm
+.Cm remove Ar address
+.Nm
+.Cm disconnect Ar address
+.Nm
+.Cm power Ar device Cm on | off
+.Sh DESCRIPTION
+The
+.Nm
+utility is the part of
+.Xr bsdbt 1
+and the XFCE panel plugin that needs root.
+They run it with
+.Xr pkexec 1 ;
+the polkit action
+.Dq org.bsdbt.helper
+allows the user of the active local session without a password, and
+nobody else.
+Each call does one thing and checks its arguments.
+.Pp
+.Nm
+drives the base system's daemons through their configuration files and
+.Xr rc 8 :
+.Xr hcsecd 8
+answers PIN and link key requests and keeps link keys, and
+.Xr bthidd 8
+turns HID reports into keyboard and mouse input.
+It replaces or removes the entry of one device and keeps the rest of
+each file as it is; its own entries carry the comment
+.Dq # managed by bsdbt .
+It enables the daemons in
+.Xr rc.conf 5
+when it gives them a device.
+.Bl -tag -width disconnect
+.It Cm pair
+Writes the device with
+.Ar pin
+to
+.Pa hcsecd.conf ,
+with
+.Xr hcsecd 8
+stopped meanwhile so that an old link key is dropped too.
+Then it opens a connection to the device and asks for authentication
+(HCI Create_Connection and Authentication_Requested):
+.Xr hcsecd 8
+answers the adapter's PIN request and receives the new link key, and a
+SIGHUP makes it save the key to
+.Pa /var/db/hcsecd.keys .
+When pairing fails, the device's entry is removed again.
+.It Cm hid
+Reads the device's HID service record over SDP, checks its report
+descriptor with
+.Xr usbhid 3
+as
+.Xr bthidd 8
+will, writes it to
+.Pa bthidd.conf
+and restarts
+.Xr bthidd 8 ,
+which then connects to the device.
+.It Cm remove
+Disconnects the device and removes it from both daemons and from the
+link key file.
+.It Cm disconnect
+Closes the connection to the device (HCI Disconnect).
+.It Cm power
+Runs
+.Dq service bluetooth start|stop Ar device .
+.El
+.Pp
+After each change
+.Nm
+writes
+.Pa /var/db/bsdbt.devices ,
+which everybody may read:
+.Pa hcsecd.conf
+holds PINs and is readable by root only.
+.Sh FILES
+.Bl -tag -width /etc/bluetooth/hcsecd.conf -compact
+.It Pa /etc/bluetooth/hcsecd.conf
+.It Pa /var/db/hcsecd.keys
+.It Pa /etc/bluetooth/bthidd.conf
+.It Pa /var/db/bthidd.hids
+.It Pa /var/db/bsdbt.devices
+.It Pa /var/run/bsdbt-helper.lock
+one change at a time
+.El
+.Sh EXIT STATUS
+0 on success, 1 on error, 2 for a usage error, 3 when the device has no
+HID service that
+.Xr bthidd 8
+can use
+.Pq Cm hid , No nothing is printed ,
+4 when the device refused to pair, 5 when it did not answer.
+.Sh SEE ALSO
+.Xr bsdbt 1 ,
+.Xr pkexec 1 ,
+.Xr bthidd 8 ,
+.Xr hcsecd 8
+.Sh AUTHORS
+.An wugq Aq Mt wugq.dev@gmail.com
+.Sh BUGS
+.Nm
+uses the default configuration files and does not read
+.Va hcsecd_config
+or
+.Va bthidd_config
+from
+.Xr rc.conf 5 .
