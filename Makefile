@@ -27,7 +27,8 @@ PLUGINDATA = $(PREFIX)/share/xfce4/panel/plugins
 CC        ?= cc
 CFLAGS    ?= -O2 -pipe
 CFLAGS    += -Wall -Wextra
-BT_CFLAGS  = -DBSDBT_HELPER='"$(LIBEXECDIR)/$(HELPER)"'
+BT_CFLAGS  = -DBSDBT_HELPER='"$(LIBEXECDIR)/$(HELPER)"' \
+	     -DPACKAGE_VERSION='"$(VERSION)"'
 
 PANEL_CFLAGS != pkg-config --cflags libxfce4panel-2.0 gtk+-3.0
 PANEL_LIBS   != pkg-config --libs libxfce4panel-2.0 gtk+-3.0
@@ -39,15 +40,17 @@ SUBST      = sed -e 's|@LIBEXECDIR@|$(LIBEXECDIR)|g'
 all: $(CLI) $(HELPER) $(PLUGIN) $(GENERATED)
 
 $(CLI): bsdbt.c bt.c bt.h
-	$(CC) $(CFLAGS) $(BT_CFLAGS) -o $(CLI) bsdbt.c bt.c -lbluetooth
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(BT_CFLAGS) $(LDFLAGS) -o $(CLI) \
+	    bsdbt.c bt.c -lbluetooth
 
 $(HELPER): bsdbt-helper.c bt.c bt.h conf.c conf.h sdphid.c sdphid.h
-	$(CC) $(CFLAGS) -o $(HELPER) bsdbt-helper.c bt.c conf.c sdphid.c \
-	    -lbluetooth -lsdp -lusbhid
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $(HELPER) bsdbt-helper.c \
+	    bt.c conf.c sdphid.c -lbluetooth -lsdp -lusbhid
 
 $(PLUGIN): bsdbluetooth-plugin.c bt.c bt.h
-	$(CC) $(CFLAGS) -fPIC -shared $(BT_CFLAGS) $(PANEL_CFLAGS) \
-	    -o $(PLUGIN) bsdbluetooth-plugin.c bt.c $(PANEL_LIBS) -lbluetooth
+	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -shared $(BT_CFLAGS) $(PANEL_CFLAGS) \
+	    $(LDFLAGS) -o $(PLUGIN) bsdbluetooth-plugin.c bt.c $(PANEL_LIBS) \
+	    -lbluetooth
 
 org.bsdbt.helper.policy: org.bsdbt.helper.policy.in
 	$(SUBST) org.bsdbt.helper.policy.in > $@

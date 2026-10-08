@@ -1,6 +1,5 @@
 [Xfce Panel]
 Type=X-XFCE-PanelPlugin
-Encoding=UTF-8
 Name=Bluetooth (FreeBSD)
 Comment=Switch Bluetooth on and off, pair and connect devices on FreeBSD
 Icon=bluetooth-active-symbolic

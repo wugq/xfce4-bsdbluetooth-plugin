@@ -54,6 +54,9 @@
 #ifndef BSDBT_HELPER
 #define BSDBT_HELPER	"/usr/local/libexec/bsdbt-helper"
 #endif
+#ifndef PACKAGE_VERSION
+#define PACKAGE_VERSION	"unknown"
+#endif
 
 /* bsdbt-helper's exit status */
 #define HELPER_NOHID	3
@@ -1502,6 +1505,26 @@ on_size_changed(XfcePanelPlugin *plugin, gint size, Panel *p)
 	return (TRUE);
 }
 
+/* "About" in the panel's menu for the plugin */
+static void
+on_about(XfcePanelPlugin *plugin, Panel *p)
+{
+	static const char *authors[] = { "wugq <wugq.dev@gmail.com>", NULL };
+
+	(void)plugin;
+	(void)p;
+	gtk_show_about_dialog(NULL,
+	    "program-name", "Bluetooth (FreeBSD)",
+	    "version", PACKAGE_VERSION,
+	    "comments", "Switch Bluetooth on and off, pair and connect "
+	    "devices with the FreeBSD Bluetooth stack.",
+	    "website", "https://github.com/wugq/xfce4-bsdbluetooth-plugin",
+	    "license-type", GTK_LICENSE_BSD,
+	    "authors", authors,
+	    "logo-icon-name", ICON_ON,
+	    NULL);
+}
+
 static void
 on_free(XfcePanelPlugin *plugin, Panel *p)
 {
@@ -1536,6 +1559,8 @@ construct(XfcePanelPlugin *plugin)
 	g_signal_connect(plugin, "size-changed", G_CALLBACK(on_size_changed),
 	    p);
 	g_signal_connect(plugin, "free-data", G_CALLBACK(on_free), p);
+	xfce_panel_plugin_menu_show_about(plugin);
+	g_signal_connect(plugin, "about", G_CALLBACK(on_about), p);
 	gtk_widget_show_all(p->button);
 	set_timer(p, REFRESH_IDLE_S);
 	refresh(p);
