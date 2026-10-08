@@ -67,6 +67,8 @@
 #define REFRESH_IDLE_S	15	/* closed: only the panel icon */
 #define SCAN_SECONDS	8
 
+#define POPUP_WIDTH	400	/* pixels, without the margins */
+
 #define ICON_ON		"bluetooth-active-symbolic"
 #define ICON_OFF	"bluetooth-disabled-symbolic"
 
@@ -97,7 +99,8 @@ typedef struct {
 	GtkWidget	*button, *icon;
 	GtkWidget	*popup;
 	gboolean	grabbed;
-	int		popup_height;
+	int		popup_width, popup_height;
+	gint64		hidden_at;	/* when the popup was last closed */
 
 	GtkWidget	*power, *adapter_label;
 	GtkWidget	*known_box, *known_empty;
@@ -865,12 +868,15 @@ device_row(const char *icon, const char *name, const char *sub,
 	l1 = gtk_label_new(name);
 	gtk_label_set_xalign(GTK_LABEL(l1), 0.0);
 	gtk_label_set_ellipsize(GTK_LABEL(l1), PANGO_ELLIPSIZE_END);
-	gtk_label_set_max_width_chars(GTK_LABEL(l1), 24);
+	gtk_label_set_max_width_chars(GTK_LABEL(l1), 20);
+	gtk_widget_set_tooltip_text(l1, name);
 	m = g_markup_printf_escaped("<small>%s</small>", sub);
 	l2 = gtk_label_new(NULL);
 	gtk_label_set_markup(GTK_LABEL(l2), m);
 	g_free(m);
 	gtk_label_set_xalign(GTK_LABEL(l2), 0.0);
+	gtk_label_set_ellipsize(GTK_LABEL(l2), PANGO_ELLIPSIZE_END);
+	gtk_label_set_max_width_chars(GTK_LABEL(l2), 20);
 	gtk_style_context_add_class(gtk_widget_get_style_context(l2),
 	    "dim-label");
 	gtk_box_pack_start(GTK_BOX(text), l1, FALSE, FALSE, 0);
@@ -1079,7 +1085,9 @@ static void
 on_popup_size(GtkWidget *w, GdkRectangle *alloc, Panel *p)
 {
 	(void)w;
-	if (alloc->height != p->popup_height) {
+	if (alloc->width != p->popup_width ||
+	    alloc->height != p->popup_height) {
+		p->popup_width = alloc->width;
 		p->popup_height = alloc->height;
 		popup_place(p);
 	}
@@ -1112,15 +1120,29 @@ popup_hide(Panel *p)
 	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(p->button)))
 		gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(p->button),
 		    FALSE);
+	p->hidden_at = g_get_monotonic_time();
 	set_timer(p, REFRESH_IDLE_S);
 }
 
+/*
+ * A click on the panel button while the popup is open closes the popup
+ * (on_popup_button()).  Should the button get the same click as well, it
+ * would open the popup again at once: a button that turns on right after
+ * the popup closed is turned off.
+ */
 static void
 on_toggled(GtkToggleButton *button, Panel *p)
 {
-	if (gtk_toggle_button_get_active(button))
+	if (gtk_toggle_button_get_active(button)) {
+		if (g_get_monotonic_time() - p->hidden_at < 300000) {
+			g_signal_handlers_block_by_func(button, on_toggled, p);
+			gtk_toggle_button_set_active(button, FALSE);
+			g_signal_handlers_unblock_by_func(button, on_toggled,
+			    p);
+			return;
+		}
 		popup_show(p);
-	else
+	} else
 		popup_hide(p);
 }
 
@@ -1138,14 +1160,23 @@ on_popup_map(GtkWidget *w, GdkEvent *ev, Panel *p)
 	return (FALSE);
 }
 
-/* A click outside the popup (it arrives here because of the grab). */
+/*
+ * A click outside the popup arrives here because of the grab.  Its x and
+ * y are not always relative to the popup: a click on the panel button
+ * comes with the button's own coordinates, which can fall inside the
+ * popup's area.  So compare screen coordinates.
+ */
 static gboolean
 on_popup_button(GtkWidget *w, GdkEventButton *ev, Panel *p)
 {
-	if (ev->window != gtk_widget_get_window(w) ||
-	    (ev->x >= 0 && ev->y >= 0 &&
-	    ev->x < gtk_widget_get_allocated_width(w) &&
-	    ev->y < gtk_widget_get_allocated_height(w)))
+	gint ox, oy;
+
+	if (ev->window != gtk_widget_get_window(w))
+		return (FALSE);
+	gdk_window_get_origin(gtk_widget_get_window(w), &ox, &oy);
+	if (ev->x_root >= ox && ev->y_root >= oy &&
+	    ev->x_root < ox + gtk_widget_get_allocated_width(w) &&
+	    ev->y_root < oy + gtk_widget_get_allocated_height(w))
 		return (FALSE);
 	popup_hide(p);
 	return (TRUE);
@@ -1226,7 +1257,8 @@ build_popup(Panel *p)
 
 	box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
 	g_object_set(box, "margin", 12, NULL);
-	gtk_widget_set_size_request(box, 340, -1);
+	/* A fixed width: rows with more buttons must not widen it. */
+	gtk_widget_set_size_request(box, POPUP_WIDTH, -1);
 
 	/* Bluetooth  [adapter]  [switch] */
 	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -1281,7 +1313,7 @@ build_popup(Panel *p)
 	p->status = gtk_label_new(NULL);
 	gtk_label_set_xalign(GTK_LABEL(p->status), 0.0);
 	gtk_label_set_line_wrap(GTK_LABEL(p->status), TRUE);
-	gtk_label_set_max_width_chars(GTK_LABEL(p->status), 40);
+	gtk_label_set_max_width_chars(GTK_LABEL(p->status), 1);
 	gtk_box_pack_start(GTK_BOX(box), p->status, FALSE, FALSE, 0);
 
 	/* PIN for a device that refused 0000 */
@@ -1289,7 +1321,7 @@ build_popup(Panel *p)
 	p->pin_label = gtk_label_new(NULL);
 	gtk_label_set_xalign(GTK_LABEL(p->pin_label), 0.0);
 	gtk_label_set_line_wrap(GTK_LABEL(p->pin_label), TRUE);
-	gtk_label_set_max_width_chars(GTK_LABEL(p->pin_label), 40);
+	gtk_label_set_max_width_chars(GTK_LABEL(p->pin_label), 1);
 	gtk_box_pack_start(GTK_BOX(p->pin_row), p->pin_label, FALSE, FALSE, 0);
 	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
 	p->pin_entry = gtk_entry_new();
