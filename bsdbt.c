@@ -71,12 +71,18 @@ usage(void)
 static void
 no_adapter(int error)
 {
+	struct bsdbt_radio *r;
+	int n;
+
 	if (error == EPROTONOSUPPORT || error == EAFNOSUPPORT)
 		errx(1, "no Bluetooth sockets: kldload ng_btsocket");
 	if (error != 0)
 		errc(1, error, "cannot list Bluetooth adapters");
-	errx(1, "no Bluetooth adapter (is its firmware loaded and "
-	    "\"service bluetooth start <device>\" run?)");
+	/* The hardware is there, its stack is not: switched off. */
+	n = bsdbt_radios(&r);
+	if (n > 0)
+		errx(1, "Bluetooth is off (bsdbt -a %s power on)", r[0].dev);
+	errx(1, "no Bluetooth adapter (is its firmware loaded?)");
 }
 
 /* The adapter given with -a, or the first one that is up. */

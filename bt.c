@@ -37,6 +37,7 @@
 #include <sys/param.h>
 #include <sys/endian.h>
 #include <sys/ioctl.h>
+#include <sys/sysctl.h>
 
 #include <bluetooth.h>
 #include <errno.h>
@@ -412,6 +413,42 @@ bsdbt_known(struct bsdbt_known **kp)
 	}
 	fclose(f);
 	*kp = k;
+	return (n);
+}
+
+int
+bsdbt_radios(struct bsdbt_radio **rp)
+{
+	static const char *drivers[] = { "ubt" };
+	struct bsdbt_radio *r, *p;
+	char name[64], desc[128];
+	size_t len;
+	int d, n, unit, misses;
+
+	*rp = NULL;
+	r = NULL;
+	n = 0;
+	for (d = 0; d < (int)nitems(drivers); d++)
+		/* Units can have gaps (unplugged devices); stop after a few. */
+		for (unit = 0, misses = 0; misses < 4; unit++) {
+			snprintf(name, sizeof(name), "dev.%s.%d.%%desc",
+			    drivers[d], unit);
+			len = sizeof(desc) - 1;
+			if (sysctlbyname(name, desc, &len, NULL, 0) < 0) {
+				misses++;
+				continue;
+			}
+			desc[len] = '\0';
+			p = reallocarray(r, n + 1, sizeof(*r));
+			if (p == NULL)
+				break;
+			r = p;
+			snprintf(r[n].dev, sizeof(r[n].dev), "%s%d",
+			    drivers[d], unit);
+			strlcpy(r[n].desc, desc, sizeof(r[n].desc));
+			n++;
+		}
+	*rp = r;
 	return (n);
 }
 

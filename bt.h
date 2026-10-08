@@ -130,6 +130,19 @@ struct bsdbt_known {
 /* The devices in BSDBT_DEVICES.  *kp is malloc'ed. */
 int	bsdbt_known(struct bsdbt_known **kp);
 
+/*
+ * Bluetooth hardware, whether its stack is up or not: the devices of the
+ * drivers that make HCI nodes (ng_ubt: ubt0, ...), from sysctl dev.
+ * When the stack is down (bsdbt power off) there is no HCI node to find,
+ * but the device is still here and can be switched on again.
+ */
+struct bsdbt_radio {
+	char		dev[16];	/* "ubt0"; its HCI node is "ubt0hci" */
+	char		desc[128];	/* "Realtek Bluetooth Radio, ..." */
+};
+
+int	bsdbt_radios(struct bsdbt_radio **rp);
+
 /* "mouse", "keyboard", "phone", ... from a Class of Device. */
 const char *bsdbt_class_str(const uint8_t class[NG_HCI_CLASS_SIZE]);
 

@@ -6,3 +6,4 @@ local/
 /*.tar.gz
 /bsdbt-helper
 /org.bsdbt.helper.policy
+/libbsdbluetooth-plugin.so

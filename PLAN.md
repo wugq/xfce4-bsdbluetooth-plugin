@@ -92,7 +92,14 @@ system daemons; it does not replace them.
   carry a `# managed by bsdbt` comment.
 - Pairing a keyboard: the plugin generates a random PIN, the helper
   writes it to `hcsecd.conf`, and the plugin shows it for the user to
-  type on the keyboard.
+  type on the keyboard.  Other devices get 0000; if one refuses it, the
+  popup asks for the PIN from its manual.
+- The plugin does everything that can block (HCI commands, an inquiry,
+  the helper) in GTask threads and touches widgets only in the main
+  loop.  It reads the state every 3 s while its popup is open and every
+  15 s otherwise (for the panel icon and tooltip).  When Bluetooth is
+  off there is no HCI node; the hardware is found through
+  `sysctl dev.ubt` so that it can be switched on again.
 - Adapters are found with `bt_devenum()`; no node name is hard-coded.
   The code only uses standard HCI commands, so it works with any
   adapter the kernel supports (`ng_ubt`); firmware loading (`rtlbtfw`,
