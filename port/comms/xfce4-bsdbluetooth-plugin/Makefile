@@ -10,6 +10,7 @@ WWW=		https://github.com/wugq/xfce4-bsdbluetooth-plugin
 LICENSE=	BSD2CLAUSE
 LICENSE_FILE=	${WRKSRC}/LICENSE
 
+LIB_DEPENDS=	libnotify.so:devel/libnotify
 RUN_DEPENDS=	pkexec:sysutils/polkit \
 		ck-list-sessions:sysutils/consolekit2
 

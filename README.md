@@ -26,10 +26,13 @@ RTL8822BE this needs [rtwb](https://github.com/wugq/rtwb) 0.2.2 or later.
 ## What it does
 
 - Panel icon: Bluetooth on or off, connected devices in the tooltip.
-- Popup: an on/off switch; the devices set up before, with Disconnect and
-  Remove; Search, which lists the devices in range with a Pair button.
+- Its menu, like the PulseAudio plugin's and the power manager's: an
+  on/off switch; the devices set up before, each with Disconnect and
+  Remove in a submenu; "Search for devices", which lists the devices in
+  range, and choosing one pairs with it.
 - Pairing a keyboard shows a PIN to type on it; other devices get 0000, and
-  if one refuses that, the popup asks for the PIN from its manual.
+  if one refuses that, a dialog asks for the PIN from its manual. Results
+  come as desktop notifications.
 - Input devices are handed to `bthidd`, which connects to them; after a
   reboot they reconnect by themselves.
 
@@ -71,8 +74,9 @@ password, and nobody else. See [PLAN.md](PLAN.md) for the design.
 - FreeBSD 14 or later, with a Bluetooth adapter the kernel supports
   (`ng_ubt`) and its firmware loaded (for example the `rtlbt-firmware`,
   `iwmbt-firmware` packages)
-- Packages `xfce4-panel`, `polkit`, `consolekit2` (so that polkit knows
-  the active session)
+- Packages `xfce4-panel`, `libnotify`, `polkit`, `consolekit2` (so that
+  polkit knows the active session), and a notification daemon
+  (`xfce4-notifyd`)
 - `pkexec` must work from the desktop. On FreeBSD it can fail with
   "Last login" messages from `pam_lastlog` in `/usr/local/etc/pam.d/polkit-1`;
   see [xfce4-bsdthinkpad-plugin](https://github.com/wugq/xfce4-bsdthinkpad-plugin)

@@ -30,8 +30,8 @@ CFLAGS    += -Wall -Wextra
 BT_CFLAGS  = -DBSDBT_HELPER='"$(LIBEXECDIR)/$(HELPER)"' \
 	     -DPACKAGE_VERSION='"$(VERSION)"'
 
-PANEL_CFLAGS != pkg-config --cflags libxfce4panel-2.0 gtk+-3.0
-PANEL_LIBS   != pkg-config --libs libxfce4panel-2.0 gtk+-3.0
+PANEL_CFLAGS != pkg-config --cflags libxfce4panel-2.0 gtk+-3.0 libnotify
+PANEL_LIBS   != pkg-config --libs libxfce4panel-2.0 gtk+-3.0 libnotify
 
 # Files made from templates: @LIBEXECDIR@ filled in
 GENERATED  = org.bsdbt.helper.policy man/bsdbt.1 man/bsdbt-helper.8
@@ -49,6 +49,7 @@ $(HELPER): bsdbt-helper.c bt.c bt.h conf.c conf.h sdphid.c sdphid.h
 
 $(PLUGIN): bsdbluetooth-plugin.c bt.c bt.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -shared $(BT_CFLAGS) $(PANEL_CFLAGS) \
+	    -DG_LOG_DOMAIN='"bsdbluetooth-plugin"' \
 	    $(LDFLAGS) -o $(PLUGIN) bsdbluetooth-plugin.c bt.c $(PANEL_LIBS) \
 	    -lbluetooth
 

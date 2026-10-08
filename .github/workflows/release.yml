@@ -50,7 +50,8 @@ jobs:
             export ASSUME_ALWAYS_YES=yes
             # Build and run dependencies of the port as binary packages, so
             # the ports framework does not build them from source
-            pkg install git pkgconf gtk3 glib xfce4-panel polkit consolekit2
+            pkg install git pkgconf gtk3 glib libnotify xfce4-panel polkit \
+                consolekit2
           run: |
             set -e
             top=$(pwd)

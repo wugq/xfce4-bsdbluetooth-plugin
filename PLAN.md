@@ -92,11 +92,18 @@ system daemons; it does not replace them.
   carry a `# managed by bsdbt` comment.
 - Pairing a keyboard: the plugin generates a random PIN, the helper
   writes it to `hcsecd.conf`, and the plugin shows it for the user to
-  type on the keyboard.  Other devices get 0000; if one refuses it, the
-  popup asks for the PIN from its manual.
+  type on the keyboard.  Other devices get 0000; if one refuses it, a
+  dialog asks for the PIN from its manual.
+- The plugin's popup is a GtkMenu opened with
+  `xfce_panel_plugin_popup_menu()`, as the PulseAudio plugin's and the
+  power manager's are: GTK and the panel grab the pointer and close it.
+  What needs typing or confirming gets a dialog; results that come after
+  the menu closed are desktop notifications (libnotify).  A GtkMenu keeps
+  the size it opened with, so when devices come or go while it is open,
+  it is closed and opened again.
 - The plugin does everything that can block (HCI commands, an inquiry,
   the helper) in GTask threads and touches widgets only in the main
-  loop.  It reads the state every 3 s while its popup is open and every
+  loop.  It reads the state every 3 s while its menu is open and every
   15 s otherwise (for the panel icon and tooltip).  When Bluetooth is
   off there is no HCI node; the hardware is found through
   `sysctl dev.ubt` so that it can be switched on again.
