@@ -1,0 +1,28 @@
+[
+{ type: install
+  message: <<EOM
+Restart the panel ("xfce4-panel -r", or log out and in again) and add the
+panel item "Bluetooth (FreeBSD)".  bsdbt(1) does the same from the command
+line.
+
+The adapter needs its firmware loaded and the Bluetooth stack started;
+devd does both when the firmware package is installed (for example
+rtlbt-firmware or iwmbt-firmware).
+
+Pairing a device enables hcsecd (and bthidd for keyboards and mice) in
+/etc/rc.conf and starts them.
+
+The plugin runs %%PREFIX%%/libexec/bsdbt-helper through pkexec.  If
+pkexec fails with a "Last login" message, give pkexec's PAM service a
+session stack without pam_lastlog in %%PREFIX%%/etc/pam.d/polkit-1
+(replace "session include system" with "session required pam_permit.so").
+EOM
+}
+{ type: remove
+  message: <<EOM
+The devices set up stay in /etc/bluetooth/hcsecd.conf and bthidd.conf
+(marked "# managed by bsdbt"), and hcsecd_enable/bthidd_enable stay in
+/etc/rc.conf.
+EOM
+}
+]

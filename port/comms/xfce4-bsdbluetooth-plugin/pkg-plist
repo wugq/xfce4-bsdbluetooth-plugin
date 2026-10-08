@@ -1,0 +1,7 @@
+bin/bsdbt
+lib/xfce4/panel/plugins/libbsdbluetooth-plugin.so
+libexec/bsdbt-helper
+share/man/man1/bsdbt.1.gz
+share/man/man8/bsdbt-helper.8.gz
+share/polkit-1/actions/org.bsdbt.helper.policy
+share/xfce4/panel/plugins/bsdbluetooth-plugin.desktop

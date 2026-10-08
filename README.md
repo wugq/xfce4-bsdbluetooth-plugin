@@ -13,8 +13,15 @@ restarting services, by hand or with the `bluetooth-config` wizard. This
 project is that layer; it keeps using the base system's daemons.
 
 **Status:** early. Tested on one machine, a ThinkPad A475 (Realtek
-RTL8822BE Bluetooth) with FreeBSD 15.1 and XFCE 4.20, pairing with a Linux
-laptop. Not yet tested with a mouse or keyboard.
+RTL8822BE Bluetooth) with FreeBSD 15.1 and XFCE 4.20: pairing with a Linux
+laptop, and a Logitech M535 mouse (pairing, use, reconnecting after it
+sleeps). Not yet tested with a keyboard. Reports from other machines are
+welcome.
+
+On cards where Wi-Fi and Bluetooth share the antenna, the Wi-Fi driver has
+to let Bluetooth listen for connections while Wi-Fi is up, or devices that
+reconnect by themselves (mice, keyboards) cannot get back in. On the
+RTL8822BE this needs [rtwb](https://github.com/wugq/rtwb) 0.2.2 or later.
 
 ## What it does
 
@@ -71,15 +78,43 @@ password, and nobody else. See [PLAN.md](PLAN.md) for the design.
   see [xfce4-bsdthinkpad-plugin](https://github.com/wugq/xfce4-bsdthinkpad-plugin)
   for the fix.
 
-## Install from source
+## Install
+
+### Binary package from a release
+
+Each [release](https://github.com/wugq/xfce4-bsdbluetooth-plugin/releases)
+has packages for FreeBSD 14 and 15 (amd64), built by GitHub Actions from the
+tag (`.github/workflows/release.yml`). As root:
+
+```
+pkg install ./xfce4-bsdbluetooth-plugin-0.1.0-FreeBSD-15-amd64.pkg
+```
+
+pkg installs the dependencies from the FreeBSD package repositories.
+
+### As a package (port)
+
+The port is in this repository, not in the ports tree. With a ports tree
+in `/usr/ports`, as root:
+
+```
+git clone https://github.com/wugq/xfce4-bsdbluetooth-plugin.git
+cd xfce4-bsdbluetooth-plugin/port/comms/xfce4-bsdbluetooth-plugin
+make install clean
+```
+
+### From source
 
 ```
 make
 make install          # as root; PREFIX=/usr/local by default
-xfce4-panel -r        # so that the panel sees the new plugin
 ```
 
-Then add "Bluetooth (FreeBSD)" in the panel's "Add New Items" dialog.
+### Then
+
+Restart the panel (`xfce4-panel -r`, or log out and in again) so that it
+sees the new plugin, and add "Bluetooth (FreeBSD)" in the panel's "Add New
+Items" dialog.
 
 `pair` enables `hcsecd` (and `bthidd` for input devices) in `rc.conf` and
 starts them.

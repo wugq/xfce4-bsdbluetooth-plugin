@@ -1,0 +1,105 @@
+# Build the FreeBSD packages of a release and attach them to its GitHub
+# release.
+#
+# GitHub has no FreeBSD runners: the build runs in a FreeBSD VM
+# (vmactions/freebsd-vm, QEMU on an Ubuntu runner).  It builds the package
+# the way README's "As a package (port)" does: the port in
+# port/comms/xfce4-bsdbluetooth-plugin fetches the sources of the tag from
+# GitHub.  The version comes from the tag (v0.1.0 -> 0.1.0), so distinfo is
+# made here and the one in the repository is only for builds by hand.
+#
+# Runs when a tag v* is pushed, or by hand (Actions -> release -> Run
+# workflow) for a tag that already exists.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build, e.g. v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  package:
+    name: FreeBSD ${{ matrix.release }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ['14.5', '15.1']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the package
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.release }}
+          envs: 'TAG'
+          usesh: true
+          prepare: |
+            set -e
+            export ASSUME_ALWAYS_YES=yes
+            # Build and run dependencies of the port as binary packages, so
+            # the ports framework does not build them from source
+            pkg install git pkgconf gtk3 glib xfce4-panel polkit consolekit2
+          run: |
+            set -e
+            top=$(pwd)
+            # The ports framework only: Mk, Templates and Keywords (a full
+            # ports tree is ~1 GB; the dependencies are installed already)
+            git clone --quiet --depth 1 --filter=blob:none --sparse \
+                https://github.com/freebsd/freebsd-ports.git /usr/ports
+            git -C /usr/ports sparse-checkout set Mk Templates Keywords
+            cd port/comms/xfce4-bsdbluetooth-plugin
+            make BATCH=yes DISTVERSION="${TAG#v}" makesum package
+            abi=$(pkg config abi | tr : -)
+            mkdir -p "$top/out"
+            for p in work/pkg/*.pkg; do
+                cp "$p" "$top/out/$(basename "$p" .pkg)-$abi.pkg"
+            done
+            ls -l "$top/out"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pkg-freebsd-${{ matrix.release }}
+          path: out/*.pkg
+          if-no-files-found: error
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Attach the packages to the release
+        run: |
+          set -e
+          ls -l out
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+              pre=
+              case "$TAG" in *-*) pre=--prerelease ;; esac
+              gh release create "$TAG" --verify-tag --title "$TAG" $pre \
+                  --notes "Binary packages, built by GitHub Actions from this tag (see .github/workflows/release.yml).
+
+          Install the one for your FreeBSD version (amd64), as root:
+
+              pkg install ./xfce4-bsdbluetooth-plugin-<version>-FreeBSD-<major>-amd64.pkg
+
+          then restart the panel (xfce4-panel -r) and add \"Bluetooth (FreeBSD)\". See README.md."
+          fi
+          gh release upload "$TAG" out/*.pkg --clobber

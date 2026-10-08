@@ -1,0 +1,14 @@
+xfce4-bsdbluetooth-plugin manages Bluetooth on FreeBSD, as blueman-applet
+does on Linux, with the base system's Bluetooth stack and daemons:
+
+- an XFCE panel plugin: Bluetooth on and off, the devices set up before
+  (connect state, disconnect, remove), search for devices in range and
+  pair them; keyboards get a PIN to type, mice and keyboards are handed to
+  bthidd(8);
+- bsdbt, the same from the command line;
+- bsdbt-helper, a small root helper run through pkexec with a polkit
+  policy that allows the user at the console.  It edits the configuration
+  of hcsecd(8) and bthidd(8) one device at a time and pairs through HCI.
+
+Bluetooth Classic devices only (the FreeBSD stack has no Bluetooth Low
+Energy input devices).
