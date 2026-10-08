@@ -1167,14 +1167,18 @@ render_known(Panel *p)
 		conn = is_connected(p, &k->bdaddr);
 		bt_ntoa(&k->bdaddr, addr);
 		item = device_item(known_icon(k), k->name[0] != '\0' ?
-		    k->name : addr, conn ? "Connected" : k->paired ? "" :
-		    "Not paired", addr);
+		    k->name : addr, conn ? "Connected" : k->paired ?
+		    "Not connected" : "Not paired", addr);
 		sub = gtk_menu_new();
 		gtk_menu_set_reserve_toggle_size(GTK_MENU(sub), FALSE);
-		gtk_menu_shell_append(GTK_MENU_SHELL(sub), action_item(
-		    "_Disconnect", "Close the connection.  An input device "
-		    "connects again when you use it.",
-		    G_CALLBACK(on_disconnect), p, k, conn && !p->busy));
+		/*
+		 * Not for a mouse or keyboard: it connects again as soon as
+		 * it is used, and drops the connection itself when idle.
+		 */
+		if (!k->hid)
+			gtk_menu_shell_append(GTK_MENU_SHELL(sub), action_item(
+			    "_Disconnect", "Close the connection",
+			    G_CALLBACK(on_disconnect), p, k, conn && !p->busy));
 		gtk_menu_shell_append(GTK_MENU_SHELL(sub), action_item(
 		    "_Remove...", "Forget the device: unpair it and stop "
 		    "using it", G_CALLBACK(on_remove), p, k, !p->busy));
@@ -1414,7 +1418,7 @@ separator(GtkWidget *menu)
  *	[icon] Bluetooth               [switch]
  *	---------------------------------------
  *	Devices
- *	  device                  state     >	(Disconnect, Remove...)
+ *	  device                  state     >	([Disconnect,] Remove...)
  *	---------------------------------------
  *	Nearby
  *	  device                  kind		(choose: pair)
