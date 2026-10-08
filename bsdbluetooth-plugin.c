@@ -104,6 +104,7 @@ typedef struct {
 
 	GtkWidget	*power, *adapter_label;
 	GtkWidget	*known_box, *known_empty;
+	GtkWidget	*nearby_section, *off_label;
 	GtkWidget	*search, *spinner, *nearby_box, *nearby_empty;
 	GtkWidget	*status;
 	GtkWidget	*pin_row, *pin_label, *pin_entry, *pin_ok;
@@ -114,6 +115,9 @@ typedef struct {
 	gboolean	refreshing;
 	guint		timer;
 	char		*known_key;	/* what the device list shows */
+
+	bdaddr_t	expanded;	/* device whose actions are shown */
+	bdaddr_t	pairing;	/* device being paired */
 
 	GArray		*nearby;	/* of Nearby */
 	gboolean	scanning;
@@ -528,6 +532,7 @@ action_done(GObject *src, GAsyncResult *res, gpointer data)
 	(void)src;
 	(void)res;
 	p->busy = FALSE;
+	memset(&p->pairing, 0, sizeof(p->pairing));
 	gtk_spinner_stop(GTK_SPINNER(p->spinner));
 	if (p->dead)
 		goto out;
@@ -616,6 +621,7 @@ pair_with_pin(Panel *p, const bdaddr_t *ba, const char *name,
 		m = g_markup_printf_escaped("Pairing with %s...", name);
 	set_status(p, m);
 	g_free(m);
+	bdaddr_copy(&p->pairing, ba);
 	args[0] = "pair";
 	args[1] = bt_ntoa(ba, addr);
 	args[2] = pin;
@@ -629,14 +635,17 @@ pair_with_pin(Panel *p, const bdaddr_t *ba, const char *name,
  * fixed PIN, usually 0000.
  */
 static void
-on_pair(GtkButton *b, Panel *p)
+on_nearby_activated(GtkListBox *box, GtkListBoxRow *row, Panel *p)
 {
 	const Nearby *n;
 	const char *kind;
 	char pin[8];
 	gboolean keyboard;
 
-	n = g_object_get_data(G_OBJECT(b), "nearby");
+	(void)box;
+	n = g_object_get_data(G_OBJECT(row), "nearby");
+	if (n == NULL || p->busy || p->scanning)
+		return;
 	kind = bsdbt_class_str(n->class);
 	keyboard = strcmp(kind, "keyboard") == 0 ||
 	    strcmp(kind, "keyboard+mouse") == 0;
@@ -660,7 +669,8 @@ on_disconnect(GtkButton *b, Panel *p)
 	args[1] = bt_ntoa(&k->bdaddr, addr);
 	args[2] = NULL;
 	set_status(p, NULL);
-	start_action(p, args, k->name, FALSE, FALSE);
+	start_action(p, args, k->name[0] != '\0' ? k->name : addr, FALSE,
+	    FALSE);
 }
 
 static gboolean
@@ -699,6 +709,7 @@ on_remove(GtkButton *b, Panel *p)
 	args[1] = bt_ntoa(&k->bdaddr, addr);
 	args[2] = NULL;
 	set_status(p, NULL);
+	memset(&p->expanded, 0, sizeof(p->expanded));
 	start_action(p, args, k->name[0] != '\0' ? k->name : addr, FALSE,
 	    FALSE);
 }
@@ -805,9 +816,13 @@ scan_done(GObject *src, GAsyncResult *res, gpointer data)
 	p->scanning = FALSE;
 	if (!p->dead) {
 		gtk_spinner_stop(GTK_SPINNER(p->spinner));
+		/*
+		 * Not p->nearby->len: the devices found are added from idle
+		 * callbacks, which may run after this one.
+		 */
 		if (n < 0)
 			set_status_text(p, "The search failed.");
-		else if (p->nearby->len == 0)
+		else if (n == 0)
 			set_status_text(p, "Nothing found.  Put the device in "
 			    "pairing mode and search again.");
 		render(p);
@@ -853,79 +868,113 @@ clear_box(GtkWidget *box)
 	g_list_free(children);
 }
 
-/* Icon, name over a dim second line, buttons at the end. */
+/* Icon, name over a dim second line, and `end' (or nothing) at the end. */
 static GtkWidget *
-device_row(const char *icon, const char *name, const char *sub,
-    GtkWidget **buttons, int nbuttons)
+device_line(const char *icon, const char *name, const char *sub,
+    GtkWidget *end)
 {
-	GtkWidget *row, *img, *text, *l1, *l2;
+	GtkWidget *line, *img, *text, *l1, *l2;
 	char *m;
-	int i;
 
-	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+	line = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
 	img = gtk_image_new_from_icon_name(icon, GTK_ICON_SIZE_LARGE_TOOLBAR);
 	text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	l1 = gtk_label_new(name);
 	gtk_label_set_xalign(GTK_LABEL(l1), 0.0);
 	gtk_label_set_ellipsize(GTK_LABEL(l1), PANGO_ELLIPSIZE_END);
-	gtk_label_set_max_width_chars(GTK_LABEL(l1), 20);
-	gtk_widget_set_tooltip_text(l1, name);
+	gtk_label_set_max_width_chars(GTK_LABEL(l1), 1);
 	m = g_markup_printf_escaped("<small>%s</small>", sub);
 	l2 = gtk_label_new(NULL);
 	gtk_label_set_markup(GTK_LABEL(l2), m);
 	g_free(m);
 	gtk_label_set_xalign(GTK_LABEL(l2), 0.0);
 	gtk_label_set_ellipsize(GTK_LABEL(l2), PANGO_ELLIPSIZE_END);
-	gtk_label_set_max_width_chars(GTK_LABEL(l2), 20);
+	gtk_label_set_max_width_chars(GTK_LABEL(l2), 1);
 	gtk_style_context_add_class(gtk_widget_get_style_context(l2),
 	    "dim-label");
 	gtk_box_pack_start(GTK_BOX(text), l1, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(text), l2, FALSE, FALSE, 0);
-	gtk_box_pack_start(GTK_BOX(row), img, FALSE, FALSE, 0);
-	gtk_box_pack_start(GTK_BOX(row), text, TRUE, TRUE, 0);
-	for (i = nbuttons - 1; i >= 0; i--) {
-		gtk_widget_set_valign(buttons[i], GTK_ALIGN_CENTER);
-		gtk_box_pack_end(GTK_BOX(row), buttons[i], FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(line), img, FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(line), text, TRUE, TRUE, 0);
+	if (end != NULL) {
+		gtk_widget_set_valign(end, GTK_ALIGN_CENTER);
+		gtk_box_pack_end(GTK_BOX(line), end, FALSE, FALSE, 0);
 	}
+	return (line);
+}
+
+/*
+ * A list row carrying a copy of its device: the snapshot or the list it
+ * came from is replaced while the row stays.
+ */
+static GtkWidget *
+list_row(GtkWidget *child, const char *key, gconstpointer data, gsize size,
+    const char *tip)
+{
+	GtkWidget *row;
+
+	row = gtk_list_box_row_new();
+	gtk_container_add(GTK_CONTAINER(row), child);
+	g_object_set_data_full(G_OBJECT(row), key, g_memdup2(data, size),
+	    g_free);
+	gtk_widget_set_tooltip_text(row, tip);
 	gtk_widget_show_all(row);
 	return (row);
 }
 
-/*
- * A button that carries a copy of its device: the snapshot or the list it
- * came from is replaced while the button stays.
- */
+/* A borderless button, for the actions under a device. */
 static GtkWidget *
-small_button(const char *label, const char *tip, GCallback cb, Panel *p,
-    const char *key, gconstpointer data, gsize size)
+flat_button(const char *label, const char *tip, GCallback cb, Panel *p,
+    gconstpointer known, gsize size)
 {
 	GtkWidget *b;
 
 	b = gtk_button_new_with_label(label);
+	gtk_button_set_relief(GTK_BUTTON(b), GTK_RELIEF_NONE);
 	gtk_widget_set_tooltip_text(b, tip);
-	g_object_set_data_full(G_OBJECT(b), key, g_memdup2(data, size),
+	g_object_set_data_full(G_OBJECT(b), "known", g_memdup2(known, size),
 	    g_free);
 	g_signal_connect(b, "clicked", cb, p);
 	return (b);
 }
 
+/* A click on a device shows its actions, or hides them again. */
+static void
+on_known_activated(GtkListBox *box, GtkListBoxRow *row, Panel *p)
+{
+	const struct bsdbt_known *k;
+
+	(void)box;
+	k = g_object_get_data(G_OBJECT(row), "known");
+	if (k == NULL)
+		return;
+	if (bdaddr_same(&p->expanded, &k->bdaddr))
+		memset(&p->expanded, 0, sizeof(p->expanded));
+	else
+		bdaddr_copy(&p->expanded, &k->bdaddr);
+	g_free(p->known_key);
+	p->known_key = NULL;
+	render(p);
+}
+
 /*
- * The known devices, rebuilt only when what they show changed: a refresh
- * every few seconds must not take a button away under the pointer.
+ * The known devices: a line each, and under the one clicked, its actions.
+ * Rebuilt only when what they show changed: a refresh every few seconds
+ * must not take a button away under the pointer.
  */
 static void
 render_known(Panel *p)
 {
 	const struct bsdbt_known *k;
-	GtkWidget *buttons[2], *row;
+	GtkWidget *box, *actions, *arrow, *b;
 	GString *key;
 	char addr[32], sub[64];
-	gboolean on, conn;
-	int i, j, nb;
+	gboolean conn, open;
+	int i;
 
-	on = adapter_up(p) != NULL;
 	key = g_string_new(NULL);
-	g_string_append_printf(key, "%d%d|", on, p->busy);
+	g_string_append_printf(key, "%d %s|", p->busy,
+	    bt_ntoa(&p->expanded, addr));
 	for (i = 0; i < p->snap.nknown; i++) {
 		k = &p->snap.known[i];
 		g_string_append_printf(key, "%s %d %d %d %s|",
@@ -943,37 +992,58 @@ render_known(Panel *p)
 	for (i = 0; i < p->snap.nknown; i++) {
 		k = &p->snap.known[i];
 		conn = is_connected(p, &k->bdaddr);
-		snprintf(sub, sizeof(sub), "%s%s",
-		    conn ? "Connected" : k->paired ? "Paired" : "Not paired",
-		    k->hid ? " · input device" : "");
-		nb = 0;
-		if (conn)
-			buttons[nb++] = small_button("Disconnect",
-			    "Close the connection.  An input device "
-			    "reconnects when you use it.",
-			    G_CALLBACK(on_disconnect), p, "known", k,
+		open = bdaddr_same(&p->expanded, &k->bdaddr);
+		snprintf(sub, sizeof(sub), "%s",
+		    conn ? "Connected" : k->paired ? "Not connected" :
+		    "Not paired");
+		arrow = gtk_image_new_from_icon_name(open ?
+		    "pan-down-symbolic" : "pan-end-symbolic",
+		    GTK_ICON_SIZE_MENU);
+		gtk_style_context_add_class(gtk_widget_get_style_context(arrow),
+		    "dim-label");
+		box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+		gtk_box_pack_start(GTK_BOX(box), device_line(known_icon(k),
+		    k->name[0] != '\0' ? k->name : bt_ntoa(&k->bdaddr, addr),
+		    sub, arrow), FALSE, FALSE, 0);
+		if (open) {
+			actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+			gtk_widget_set_halign(actions, GTK_ALIGN_END);
+			if (conn) {
+				b = flat_button("Disconnect", "Close the "
+				    "connection.  An input device connects "
+				    "again when you use it.",
+				    G_CALLBACK(on_disconnect), p, k,
+				    sizeof(*k));
+				gtk_widget_set_sensitive(b, !p->busy);
+				gtk_box_pack_start(GTK_BOX(actions), b, FALSE,
+				    FALSE, 0);
+			}
+			b = flat_button("Remove", "Forget the device: unpair "
+			    "it and stop using it", G_CALLBACK(on_remove), p, k,
 			    sizeof(*k));
-		buttons[nb++] = small_button("Remove",
-		    "Forget the device: unpair it and stop using it",
-		    G_CALLBACK(on_remove), p, "known", k, sizeof(*k));
-		for (j = 0; j < nb; j++)
-			gtk_widget_set_sensitive(buttons[j], !p->busy);
-		row = device_row(known_icon(k), k->name[0] != '\0' ? k->name :
-		    bt_ntoa(&k->bdaddr, addr), sub, buttons, nb);
-		gtk_box_pack_start(GTK_BOX(p->known_box), row, FALSE, FALSE,
-		    0);
+			gtk_widget_set_sensitive(b, !p->busy);
+			gtk_box_pack_start(GTK_BOX(actions), b, FALSE, FALSE,
+			    0);
+			gtk_box_pack_start(GTK_BOX(box), actions, FALSE, FALSE,
+			    0);
+		}
+		bt_ntoa(&k->bdaddr, addr);
+		gtk_container_add(GTK_CONTAINER(p->known_box), list_row(box,
+		    "known", k, sizeof(*k), addr));
 	}
 	gtk_widget_set_visible(p->known_empty, p->snap.nknown == 0);
 }
 
+/* A click on a device in range pairs with it. */
 static void
 render_nearby(Panel *p)
 {
 	Nearby *n;
-	GtkWidget *b, *row;
-	char addr[32];
+	GtkWidget *end;
+	char addr[32], *tip, *sub;
 	guint i;
 	int shown;
+	gboolean pairing;
 
 	clear_box(p->nearby_box);
 	shown = 0;
@@ -981,17 +1051,27 @@ render_nearby(Panel *p)
 		n = &g_array_index(p->nearby, Nearby, i);
 		if (is_known(p, &n->bdaddr))
 			continue;
-		b = small_button("Pair", "Pair with this device and set it "
-		    "up", G_CALLBACK(on_pair), p, "nearby", n, sizeof(*n));
-		gtk_widget_set_sensitive(b, !p->busy && !p->scanning);
-		row = device_row(class_icon(n->class), n->name[0] != '\0' ?
-		    n->name : bt_ntoa(&n->bdaddr, addr), n->name[0] != '\0' ?
-		    bt_ntoa(&n->bdaddr, addr) : bsdbt_class_str(n->class), &b,
-		    1);
-		gtk_box_pack_start(GTK_BOX(p->nearby_box), row, FALSE, FALSE,
-		    0);
+		pairing = p->busy && bdaddr_same(&p->pairing, &n->bdaddr);
+		end = NULL;
+		/* What kind of device it is, as blueman shows. */
+		sub = g_strdup_printf("%c%s · %s",
+		    g_ascii_toupper(bsdbt_class_str(n->class)[0]),
+		    bsdbt_class_str(n->class) + 1,
+		    pairing ? "pairing..." : "click to pair");
+		if (pairing) {
+			end = gtk_spinner_new();
+			gtk_spinner_start(GTK_SPINNER(end));
+		}
+		bt_ntoa(&n->bdaddr, addr);
+		tip = g_strdup(addr);
+		gtk_container_add(GTK_CONTAINER(p->nearby_box), list_row(
+		    device_line(class_icon(n->class), n->name[0] != '\0' ?
+		    n->name : addr, sub, end), "nearby", n, sizeof(*n), tip));
+		g_free(tip);
+		g_free(sub);
 		shown++;
 	}
+	gtk_widget_set_sensitive(p->nearby_box, !p->busy && !p->scanning);
 	gtk_widget_set_visible(p->nearby_empty, shown == 0 && !p->scanning);
 }
 
@@ -1057,6 +1137,8 @@ render(Panel *p)
 	gtk_label_set_markup(GTK_LABEL(p->adapter_label), m);
 	g_free(m);
 
+	gtk_widget_set_visible(p->nearby_section, on);
+	gtk_widget_set_visible(p->off_label, !on && can_power);
 	gtk_widget_set_sensitive(p->search, on && !p->busy && !p->scanning);
 	gtk_button_set_label(GTK_BUTTON(p->search), p->scanning ?
 	    "Searching..." : "Search");
@@ -1121,6 +1203,11 @@ popup_hide(Panel *p)
 		gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(p->button),
 		    FALSE);
 	p->hidden_at = g_get_monotonic_time();
+	/* Open again with the devices' actions put away. */
+	if (!bdaddr_any(&p->expanded)) {
+		memset(&p->expanded, 0, sizeof(p->expanded));
+		render(p);
+	}
 	set_timer(p, REFRESH_IDLE_S);
 }
 
@@ -1240,6 +1327,41 @@ dim_label(const char *text)
 	return (l);
 }
 
+/*
+ * The lists sit on the popup's background, with rows that light up under
+ * the pointer (Adwaita draws lists on a white, framed background).  The
+ * plugin runs in a process of its own, so the CSS reaches nothing else.
+ */
+static void
+load_css(void)
+{
+	static const char css[] =
+	    ".bsdbt-list { background-color: transparent; }\n"
+	    ".bsdbt-list row { padding: 4px 6px; border-radius: 6px; }\n";
+	GtkCssProvider *provider;
+
+	provider = gtk_css_provider_new();
+	gtk_css_provider_load_from_data(provider, css, -1, NULL);
+	gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+	    GTK_STYLE_PROVIDER(provider),
+	    GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+	g_object_unref(provider);
+}
+
+static GtkWidget *
+device_list(void)
+{
+	GtkWidget *list;
+
+	list = gtk_list_box_new();
+	gtk_list_box_set_selection_mode(GTK_LIST_BOX(list),
+	    GTK_SELECTION_NONE);
+	gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(list), TRUE);
+	gtk_style_context_add_class(gtk_widget_get_style_context(list),
+	    "bsdbt-list");
+	return (list);
+}
+
 static void
 build_popup(Panel *p)
 {
@@ -1260,7 +1382,7 @@ build_popup(Panel *p)
 	/* A fixed width: rows with more buttons must not widen it. */
 	gtk_widget_set_size_request(box, POPUP_WIDTH, -1);
 
-	/* Bluetooth  [adapter]  [switch] */
+	/* Bluetooth  [adapter]  (spinner) [switch] */
 	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
 	text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	p->adapter_label = gtk_label_new(NULL);
@@ -1270,6 +1392,7 @@ build_popup(Panel *p)
 	gtk_box_pack_start(GTK_BOX(text), heading("Bluetooth"), FALSE, FALSE,
 	    0);
 	gtk_box_pack_start(GTK_BOX(text), p->adapter_label, FALSE, FALSE, 0);
+	p->spinner = gtk_spinner_new();
 	p->power = gtk_switch_new();
 	gtk_widget_set_valign(p->power, GTK_ALIGN_CENTER);
 	gtk_widget_set_tooltip_text(p->power, "Start or stop the Bluetooth "
@@ -1278,36 +1401,45 @@ build_popup(Panel *p)
 	    GTK_ICON_SIZE_LARGE_TOOLBAR), FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(row), text, TRUE, TRUE, 0);
 	gtk_box_pack_end(GTK_BOX(row), p->power, FALSE, FALSE, 0);
+	gtk_box_pack_end(GTK_BOX(row), p->spinner, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(box), row, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(box),
 	    gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
 
 	/* Devices */
 	gtk_box_pack_start(GTK_BOX(box), heading("Devices"), FALSE, FALSE, 0);
-	p->known_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+	p->known_box = device_list();
+	g_signal_connect(p->known_box, "row-activated",
+	    G_CALLBACK(on_known_activated), p);
 	gtk_box_pack_start(GTK_BOX(box), p->known_box, FALSE, FALSE, 0);
-	p->known_empty = dim_label("None yet.  Search for a device and "
-	    "pair it.");
+	p->known_empty = dim_label("None yet.");
 	gtk_box_pack_start(GTK_BOX(box), p->known_empty, FALSE, FALSE, 0);
-	gtk_box_pack_start(GTK_BOX(box),
-	    gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
+	p->off_label = dim_label("Bluetooth is off.");
+	gtk_box_pack_start(GTK_BOX(box), p->off_label, FALSE, FALSE, 0);
 
-	/* Nearby  (spinner)  [Search] */
+	/* Nearby  [Search], only while Bluetooth is on */
+	p->nearby_section = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+	gtk_box_pack_start(GTK_BOX(p->nearby_section),
+	    gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
 	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-	p->spinner = gtk_spinner_new();
 	p->search = gtk_button_new_with_label("Search");
+	gtk_button_set_relief(GTK_BUTTON(p->search), GTK_RELIEF_NONE);
 	gtk_widget_set_tooltip_text(p->search, "Look for devices in pairing "
 	    "mode (about 10 seconds)");
 	g_signal_connect(p->search, "clicked", G_CALLBACK(on_search), p);
 	gtk_box_pack_start(GTK_BOX(row), heading("Nearby"), FALSE, FALSE, 0);
-	gtk_box_pack_start(GTK_BOX(row), p->spinner, FALSE, FALSE, 0);
 	gtk_box_pack_end(GTK_BOX(row), p->search, FALSE, FALSE, 0);
-	gtk_box_pack_start(GTK_BOX(box), row, FALSE, FALSE, 0);
-	p->nearby_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-	gtk_box_pack_start(GTK_BOX(box), p->nearby_box, FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(p->nearby_section), row, FALSE, FALSE, 0);
+	p->nearby_box = device_list();
+	g_signal_connect(p->nearby_box, "row-activated",
+	    G_CALLBACK(on_nearby_activated), p);
+	gtk_box_pack_start(GTK_BOX(p->nearby_section), p->nearby_box, FALSE,
+	    FALSE, 0);
 	p->nearby_empty = dim_label("Put a device in pairing mode, then "
 	    "search.");
-	gtk_box_pack_start(GTK_BOX(box), p->nearby_empty, FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(p->nearby_section), p->nearby_empty, FALSE,
+	    FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(box), p->nearby_section, FALSE, FALSE, 0);
 
 	/* What is going on, or what went wrong */
 	p->status = gtk_label_new(NULL);
@@ -1343,6 +1475,7 @@ build_popup(Panel *p)
 	gtk_widget_show_all(box);
 	gtk_widget_hide(p->status);
 	gtk_widget_hide(p->pin_row);
+	gtk_widget_hide(p->off_label);
 	gtk_widget_add_events(p->popup, GDK_BUTTON_PRESS_MASK);
 	g_signal_connect(p->popup, "map-event", G_CALLBACK(on_popup_map), p);
 	g_signal_connect(p->popup, "size-allocate", G_CALLBACK(on_popup_size),
@@ -1398,6 +1531,7 @@ construct(XfcePanelPlugin *plugin)
 	xfce_panel_plugin_add_action_widget(plugin, p->button);
 	xfce_panel_plugin_set_small(plugin, TRUE);
 
+	load_css();
 	build_popup(p);
 	g_signal_connect(plugin, "size-changed", G_CALLBACK(on_size_changed),
 	    p);
