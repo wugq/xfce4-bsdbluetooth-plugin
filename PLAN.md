@@ -139,7 +139,15 @@ system daemons; it does not replace them.
 - Port: `comms/xfce4-bsdbluetooth-plugin` in this repository; packages
   attached to GitHub releases by CI.  Not submitted to the ports tree.
 
+## Status
+
+B0, B1 and B2 are done and tested on a ThinkPad A475 (RTL8822BE
+Bluetooth, FreeBSD 15.1): pairing with a BlueZ laptop and with a
+Logitech M535 mouse, which reconnects by itself after sleeping.  That
+needed rtwb 0.2.2: on cards sharing the antenna, the Wi-Fi driver must
+let Bluetooth listen for connections (page scan) while Wi-Fi is up.
+
 ## Open questions
 
-- Test hardware: needs a Bluetooth Classic mouse; test on the A475
-  (RTL8822BE Bluetooth, `ubt0`).  Light traffic works with Wi-Fi up.
+- Not tested yet: a keyboard (PIN typed on it), reconnection after a
+  reboot, other adapters.
