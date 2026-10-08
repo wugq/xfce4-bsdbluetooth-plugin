@@ -9,7 +9,7 @@
 #   make clean
 
 PACKAGE    = xfce4-bsdbluetooth-plugin
-VERSION    = 0.1.0
+VERSION    = 0.1.1
 
 CLI        = bsdbt
 HELPER     = bsdbt-helper

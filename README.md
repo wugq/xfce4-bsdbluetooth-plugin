@@ -93,7 +93,7 @@ has packages for FreeBSD 14 and 15 (amd64), built by GitHub Actions from the
 tag (`.github/workflows/release.yml`). As root:
 
 ```
-pkg install ./xfce4-bsdbluetooth-plugin-0.1.0-FreeBSD-15-amd64.pkg
+pkg install ./xfce4-bsdbluetooth-plugin-0.1.1-FreeBSD-15-amd64.pkg
 ```
 
 pkg installs the dependencies from the FreeBSD package repositories.

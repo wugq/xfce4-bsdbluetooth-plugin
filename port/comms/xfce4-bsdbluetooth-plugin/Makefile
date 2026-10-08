@@ -1,6 +1,6 @@
 PORTNAME=	xfce4-bsdbluetooth-plugin
 DISTVERSIONPREFIX=	v
-DISTVERSION=	0.1.0
+DISTVERSION=	0.1.1
 CATEGORIES=	comms xfce
 
 MAINTAINER=	wugq.dev@gmail.com
