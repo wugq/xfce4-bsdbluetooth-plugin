@@ -1056,22 +1056,28 @@ dim_label(const char *text)
 	return (l);
 }
 
-/* Icon, name and, dimmed at the end, what it is or its state. */
+/*
+ * Icon, name and, at the end, `end' if any.  A faded icon: a device that
+ * is not connected.
+ */
 static GtkWidget *
-device_item(const char *icon, const char *name, const char *note,
-    const char *tip)
+device_item(const char *icon, gboolean faded, const char *name,
+    GtkWidget *end, const char *tip)
 {
-	GtkWidget *row, *label;
+	GtkWidget *row, *img, *label;
 
 	row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+	img = gtk_image_new_from_icon_name(icon, GTK_ICON_SIZE_MENU);
+	if (faded)
+		gtk_widget_set_opacity(img, 0.4);
 	label = gtk_label_new(name);
 	gtk_label_set_xalign(GTK_LABEL(label), 0.0);
 	gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
 	gtk_label_set_max_width_chars(GTK_LABEL(label), 34);
-	gtk_box_pack_start(GTK_BOX(row), gtk_image_new_from_icon_name(icon,
-	    GTK_ICON_SIZE_MENU), FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(row), img, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(row), label, TRUE, TRUE, 0);
-	gtk_box_pack_end(GTK_BOX(row), dim_label(note), FALSE, FALSE, 0);
+	if (end != NULL)
+		gtk_box_pack_end(GTK_BOX(row), end, FALSE, FALSE, 0);
 	return (row_item(row, tip));
 }
 
@@ -1141,7 +1147,7 @@ render_known(Panel *p)
 	const struct bsdbt_known *k;
 	GtkWidget *item, *sub;
 	GString *key;
-	char addr[32];
+	char addr[32], *tip;
 	gboolean conn;
 	int i, at;
 
@@ -1166,9 +1172,17 @@ render_known(Panel *p)
 		k = &p->snap.known[i];
 		conn = is_connected(p, &k->bdaddr);
 		bt_ntoa(&k->bdaddr, addr);
-		item = device_item(known_icon(k), k->name[0] != '\0' ?
-		    k->name : addr, conn ? "Connected" : k->paired ?
-		    "Not connected" : "Not paired", addr);
+		/*
+		 * The state as GNOME's Bluetooth menu shows it: a check mark
+		 * when connected, a faded icon when not; in words in the
+		 * tooltip.
+		 */
+		tip = g_strdup_printf("%s\n%s", conn ? "Connected" :
+		    k->paired ? "Not connected" : "Not paired", addr);
+		item = device_item(known_icon(k), !conn, k->name[0] != '\0' ?
+		    k->name : addr, conn ? gtk_image_new_from_icon_name(
+		    "object-select-symbolic", GTK_ICON_SIZE_MENU) : NULL, tip);
+		g_free(tip);
 		sub = gtk_menu_new();
 		gtk_menu_set_reserve_toggle_size(GTK_MENU(sub), FALSE);
 		/*
@@ -1230,8 +1244,9 @@ render_nearby(Panel *p)
 		/* What kind of device it is, as blueman shows. */
 		kind = g_strdup(bsdbt_class_str(n->class));
 		kind[0] = g_ascii_toupper(kind[0]);
-		item = device_item(class_icon(n->class), n->name[0] != '\0' ?
-		    n->name : addr, kind, "Pair with this device");
+		item = device_item(class_icon(n->class), FALSE,
+		    n->name[0] != '\0' ? n->name : addr, dim_label(kind),
+		    "Pair with this device");
 		g_free(kind);
 		gtk_widget_set_sensitive(item, !p->busy);
 		g_object_set_data_full(G_OBJECT(item), "nearby", g_memdup2(n,
@@ -1418,7 +1433,7 @@ separator(GtkWidget *menu)
  *	[icon] Bluetooth               [switch]
  *	---------------------------------------
  *	Devices
- *	  device                  state     >	([Disconnect,] Remove...)
+ *	  device                  [check]   >	([Disconnect,] Remove...)
  *	---------------------------------------
  *	Nearby
  *	  device                  kind		(choose: pair)

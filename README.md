@@ -27,7 +27,8 @@ RTL8822BE this needs [rtwb](https://github.com/wugq/rtwb) 0.2.2 or later.
 
 - Panel icon: Bluetooth on or off, connected devices in the tooltip.
 - Its menu, like the PulseAudio plugin's and the power manager's: an
-  on/off switch; the devices set up before, connected or not, each with
+  on/off switch; the devices set up before (a check mark when connected,
+  a faded icon when not), each with
   Remove (and Disconnect, except for mice and keyboards, which connect
   again as soon as they are used) in a submenu; "Search for devices", which lists the devices in
   range, and choosing one pairs with it.
