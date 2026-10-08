@@ -34,7 +34,7 @@
  * xfce_panel_plugin_popup_menu(), as the pulseaudio plugin's and the power
  * manager's are, so GTK and the panel do the grabbing and closing.  What
  * needs typing or confirming (a PIN, removing a device) gets a dialog, and
- * results come as desktop notifications.
+ * what happened or went wrong comes as a desktop notification.
  *
  * Reading state and searching run as the user (bt.c); changes go through
  * bsdbt-helper with pkexec.  Everything that can block -- HCI commands,
@@ -107,7 +107,6 @@ typedef struct {
 	GtkWidget	*power_item, *power, *known_header, *known_empty;
 	GtkWidget	*nearby_sep, *nearby_header;
 	GtkWidget	*search_item, *search_label, *search_spinner;
-	GtkWidget	*status_sep, *status_item, *status;
 	GList		*known_items, *nearby_items;
 	char		*known_key;	/* what the device items show */
 	char		*nearby_key;
@@ -130,7 +129,6 @@ typedef struct {
 static void	refresh(Panel *);
 static void	render(Panel *);
 static void	set_timer(Panel *, int);
-static void	set_status(Panel *, const char *);
 
 /* ---- lifetime ----------------------------------------------------------- */
 
@@ -248,7 +246,6 @@ reopen_show(gpointer data)
 		g_debug("menu: not shown again (no pointer grab?)");
 		gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(p->button),
 		    FALSE);
-		set_status(p, NULL);
 		set_timer(p, REFRESH_IDLE_S);
 	}
 	return (G_SOURCE_REMOVE);
@@ -278,27 +275,9 @@ reposition(Panel *p)
 }
 
 /*
- * The last line of the menu: what is going on while it is open (pairing,
- * searching, an error).  Cleared when the menu closes.
- */
-static void
-set_status(Panel *p, const char *text)
-{
-	gboolean show, was;
-
-	show = text != NULL && text[0] != '\0';
-	was = gtk_widget_get_visible(p->status_item);
-	gtk_label_set_text(GTK_LABEL(p->status), show ? text : "");
-	gtk_widget_set_visible(p->status_item, show);
-	gtk_widget_set_visible(p->status_sep, show);
-	if (show || was)
-		reposition(p);
-}
-
-/*
- * The result of something that goes on after the menu closed (pairing,
- * removing): a notification, updated in place as the pulseaudio plugin's
- * are, so that several results do not pile up.
+ * What happened, or went wrong: a notification, updated in place as the
+ * pulseaudio plugin's are, so that several messages do not pile up.  Not
+ * a line in the menu, where it would stay and take room.
  */
 static void
 notify(Panel *p, const char *body, gboolean error)
@@ -677,7 +656,6 @@ action_done(GObject *src, GAsyncResult *res, gpointer data)
 		goto out;
 	if (p->pin_dialog != NULL)
 		gtk_widget_destroy(p->pin_dialog);
-	set_status(p, NULL);
 
 	if (a->r.status == 0 && a->pair) {
 		if (a->hid.status == 0)
@@ -769,11 +747,11 @@ pair_with_pin(Panel *p, const bdaddr_t *ba, const char *name,
 		name = addr;
 	if (keyboard)
 		show_keyboard_pin(p, name, pin);
-	m = g_strdup_printf("Pairing with %s...", name);
-	set_status(p, m);
-	if (!keyboard)
+	if (!keyboard) {
+		m = g_strdup_printf("Pairing with %s...", name);
 		notify(p, m, FALSE);
-	g_free(m);
+		g_free(m);
+	}
 	args[0] = "pair";
 	args[1] = addr;
 	args[2] = pin;
@@ -888,8 +866,6 @@ on_power(GObject *sw, GParamSpec *pspec, Panel *p)
 	args[1] = dev;
 	args[2] = on ? "on" : "off";
 	args[3] = NULL;
-	set_status(p, on ? "Switching Bluetooth on..." :
-	    "Switching Bluetooth off...");
 	start_action(p, args, dev, FALSE, FALSE);
 }
 
@@ -977,10 +953,10 @@ scan_done(GObject *src, GAsyncResult *res, gpointer data)
 		 * callbacks, which may run after this one.
 		 */
 		if (n < 0)
-			set_status(p, "The search failed.");
+			notify(p, "The search failed.", TRUE);
 		else if (n == 0)
-			set_status(p, "Nothing found.  Put the device in "
-			    "pairing mode and search again.");
+			notify(p, "Nothing found.  Put the device in pairing "
+			    "mode and search again.", FALSE);
 		render(p);
 	}
 	panel_unref(p);
@@ -999,7 +975,6 @@ start_search(Panel *p)
 	g_debug("search: on %s", a->node);
 	p->scanning = TRUE;
 	g_array_set_size(p->nearby, 0);
-	set_status(p, NULL);
 	render(p);
 	job = g_new0(ScanJob, 1);
 	job->p = panel_ref(p);
@@ -1383,8 +1358,6 @@ on_menu_hide(GtkWidget *menu, Panel *p)
 		return;		/* opens again in a moment */
 	g_debug("menu: closed");
 	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(p->button), FALSE);
-	/* Results that come later are notifications. */
-	set_status(p, NULL);
 	set_timer(p, REFRESH_IDLE_S);
 }
 
@@ -1438,8 +1411,6 @@ separator(GtkWidget *menu)
  *	Nearby
  *	  device                  kind		(choose: pair)
  *	  Search for devices
- *	---------------------------------------
- *	what is going on
  */
 static void
 build_menu(Panel *p)
@@ -1493,17 +1464,6 @@ build_menu(Panel *p)
 	    G_CALLBACK(on_search_release), p);
 	g_signal_connect(p->search_item, "activate",
 	    G_CALLBACK(on_search_activate), p);
-
-	p->status_sep = separator(p->menu);
-	p->status = gtk_label_new(NULL);
-	gtk_label_set_xalign(GTK_LABEL(p->status), 0.0);
-	gtk_label_set_line_wrap(GTK_LABEL(p->status), TRUE);
-	gtk_label_set_max_width_chars(GTK_LABEL(p->status), 36);
-	p->status_item = row_item(p->status, NULL);
-	gtk_widget_set_sensitive(p->status_item, FALSE);
-	gtk_menu_shell_append(GTK_MENU_SHELL(p->menu), p->status_item);
-	gtk_widget_hide(p->status_sep);
-	gtk_widget_hide(p->status_item);
 
 	g_signal_connect(p->menu, "hide", G_CALLBACK(on_menu_hide), p);
 }
