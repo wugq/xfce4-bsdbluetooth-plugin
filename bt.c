@@ -40,6 +40,7 @@
 
 #include <bluetooth.h>
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -299,6 +300,119 @@ bsdbt_remote_name(const char *node, const bdaddr_t *bdaddr,
 	}
 	strlcpy(name, ep.name, MIN(len, sizeof(ep.name) + 1));
 	return (0);
+}
+
+int
+bsdbt_neighbor(const char *node, const bdaddr_t *bdaddr,
+    struct bsdbt_device *d)
+{
+	struct ng_btsocket_hci_raw_node_neighbor_cache r;
+	int i, s, saved, found;
+
+	s = bt_devopen(node);
+	if (s < 0)
+		return (-1);
+	memset(&r, 0, sizeof(r));
+	r.num_entries = NG_HCI_MAX_NEIGHBOR_NUM;
+	r.entries = calloc(r.num_entries, sizeof(*r.entries));
+	if (r.entries == NULL) {
+		bt_devclose(s);
+		return (-1);
+	}
+	if (ioctl(s, SIOC_HCI_RAW_NODE_GET_NEIGHBOR_CACHE, &r,
+	    sizeof(r)) < 0) {
+		saved = errno;
+		free(r.entries);
+		bt_devclose(s);
+		errno = saved;
+		return (-1);
+	}
+	bt_devclose(s);
+	found = 0;
+	for (i = 0; i < (int)r.num_entries; i++) {
+		if (!bdaddr_same(&r.entries[i].bdaddr, bdaddr))
+			continue;
+		memset(d, 0, sizeof(*d));
+		bdaddr_copy(&d->bdaddr, bdaddr);
+		d->clock_offset = r.entries[i].clock_offset;
+		d->pscan_rep_mode = r.entries[i].page_scan_rep_mode;
+		found = 1;
+		break;
+	}
+	free(r.entries);
+	return (found);
+}
+
+int
+bsdbt_find_connection(const bdaddr_t *bdaddr, char *node,
+    struct bsdbt_conn *c)
+{
+	struct bsdbt_adapter *a;
+	struct bsdbt_conn *cl;
+	int i, j, n, nc, found;
+
+	n = bsdbt_adapters(&a);
+	if (n < 0)
+		return (-1);
+	found = 0;
+	for (i = 0; i < n && !found; i++) {
+		if (!BSDBT_ADAPTER_UP(&a[i]))
+			continue;
+		nc = bsdbt_connections(a[i].node, &cl);
+		if (nc < 0)
+			continue;
+		for (j = 0; j < nc; j++)
+			if (cl[j].link_type == NG_HCI_LINK_ACL &&
+			    cl[j].state == NG_HCI_CON_OPEN &&
+			    bdaddr_same(&cl[j].bdaddr, bdaddr)) {
+				strlcpy(node, a[i].node, HCI_DEVNAME_SIZE);
+				*c = cl[j];
+				found = 1;
+				break;
+			}
+		free(cl);
+	}
+	free(a);
+	return (found);
+}
+
+int
+bsdbt_known(struct bsdbt_known **kp)
+{
+	struct bsdbt_known *k, *p;
+	FILE *f;
+	char line[512], *s, *addr, *paired, *hid;
+	int n;
+
+	*kp = NULL;
+	f = fopen(BSDBT_DEVICES, "r");
+	if (f == NULL)
+		return (errno == ENOENT ? 0 : -1);
+	k = NULL;
+	n = 0;
+	while (fgets(line, sizeof(line), f) != NULL) {
+		line[strcspn(line, "\n")] = '\0';
+		s = line;
+		addr = strsep(&s, "\t");
+		paired = strsep(&s, "\t");
+		hid = strsep(&s, "\t");
+		if (addr == NULL || paired == NULL || hid == NULL || s == NULL)
+			continue;
+		p = reallocarray(k, n + 1, sizeof(*k));
+		if (p == NULL)
+			break;
+		k = p;
+		memset(&k[n], 0, sizeof(k[n]));
+		if (!bt_aton(addr, &k[n].bdaddr))
+			continue;
+		k[n].paired = strcmp(paired, "paired") == 0;
+		k[n].hid = strcmp(hid, "hid") == 0;
+		strlcpy(k[n].name, s, sizeof(k[n].name));
+		n++;
+	}
+	fclose(f);
+	*kp = k;
+	return (n);
 }
 
 /*

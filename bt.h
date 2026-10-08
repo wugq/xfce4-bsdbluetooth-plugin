@@ -42,6 +42,15 @@
 
 #define BSDBT_NAME_SIZE	(NG_HCI_UNIT_NAME_SIZE + 1)
 
+/*
+ * Devices set up with bsdbt-helper, one per line: address, "paired" or
+ * "-", "hid" or "-", name.  The helper writes it after every change; the
+ * daemons' own files are not readable by everyone (hcsecd.conf has PINs).
+ */
+#ifndef BSDBT_DEVICES
+#define BSDBT_DEVICES	"/var/db/bsdbt.devices"
+#endif
+
 struct bsdbt_adapter {
 	char		node[HCI_DEVNAME_SIZE];	/* e.g. "ubt0hci" */
 	bdaddr_t	bdaddr;
@@ -96,6 +105,30 @@ int	bsdbt_scan(const char *node, int seconds, struct bsdbt_device **dp);
  */
 int	bsdbt_remote_name(const char *node, const bdaddr_t *bdaddr,
 	    const struct bsdbt_device *d, char *name, size_t len);
+
+/*
+ * What the adapter remembers of a device from the last inquiry (clock
+ * offset, page scan mode); 0 when it remembers nothing.
+ */
+int	bsdbt_neighbor(const char *node, const bdaddr_t *bdaddr,
+	    struct bsdbt_device *d);
+
+/*
+ * The adapter (node, at least HCI_DEVNAME_SIZE bytes) and the ACL
+ * connection to a device; 0 when not connected.
+ */
+int	bsdbt_find_connection(const bdaddr_t *bdaddr, char *node,
+	    struct bsdbt_conn *c);
+
+struct bsdbt_known {
+	bdaddr_t	bdaddr;
+	int		paired;		/* hcsecd has a link key */
+	int		hid;		/* in bthidd.conf */
+	char		name[BSDBT_NAME_SIZE];
+};
+
+/* The devices in BSDBT_DEVICES.  *kp is malloc'ed. */
+int	bsdbt_known(struct bsdbt_known **kp);
 
 /* "mouse", "keyboard", "phone", ... from a Class of Device. */
 const char *bsdbt_class_str(const uint8_t class[NG_HCI_CLASS_SIZE]);

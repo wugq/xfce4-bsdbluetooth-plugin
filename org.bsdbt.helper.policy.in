@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  SPDX-License-Identifier: BSD-2-Clause
+
+  bsdbt and the xfce4-bsdbluetooth-plugin panel plugin run bsdbt-helper
+  through pkexec to pair, remove and disconnect Bluetooth devices and to
+  switch Bluetooth on and off.  The user at the console (active local
+  session) may do this without a password; remote and inactive sessions
+  may not.  Same rules as org.xfce.power.backlight-helper.
+-->
+<policyconfig>
+  <vendor>xfce4-bsdbluetooth-plugin</vendor>
+  <vendor_url>https://github.com/wugq/xfce4-bsdbluetooth-plugin</vendor_url>
+
+  <action id="org.bsdbt.helper">
+    <description>Manage Bluetooth devices</description>
+    <message>Authentication is required to manage Bluetooth devices</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path"
+      >@LIBEXECDIR@/bsdbt-helper</annotate>
+  </action>
+</policyconfig>

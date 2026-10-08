@@ -26,7 +26,10 @@ system daemons; it does not replace them.
   are called directly, so there is no text output to parse.
 - `bluetooth-config` is not used.
 - The daemons `hcsecd` and `bthidd` are used as they are, through their
-  configuration files and SIGHUP (both reload their configuration on it).
+  configuration files and rc.d.  `hcsecd` keeps link keys in memory and
+  writes `/var/db/hcsecd.keys` on SIGHUP (when it also rereads its
+  configuration) and when it stops; `bthidd` exits on SIGHUP, so it is
+  restarted to read a new configuration.
 - Services are started and stopped through rc.d (`service`), the
   system's standard way, which also honours `rc.conf`.
 
@@ -35,7 +38,7 @@ system daemons; it does not replace them.
 | HCI raw socket (`PF_BLUETOOTH`, `BLUETOOTH_PROTO_HCI`), `libbluetooth` (`bt_devopen`, `bt_devreq`, `bt_devinquiry`, `bt_devenum`) | send HCI commands, receive HCI events as they happen |
 | `SIOC_HCI_RAW_NODE_*` ioctls (`<netgraph/bluetooth/include/ng_btsocket.h>`) | node state, BD_ADDR, connection list, neighbor cache |
 | `libsdp` (`sdp_open`, `sdp_search`) | ask a device for its services and its HID descriptor |
-| `hcsecd.conf`, `bthidd.conf` + SIGHUP | pairing (PIN, link keys) and HID input by the base daemons |
+| `hcsecd.conf`, `bthidd.conf`, rc.d | pairing (PIN, link keys) and HID input by the base daemons |
 | rc.d (`service`) | start and stop `bluetooth`, `hcsecd`, `bthidd` |
 
 ### Privileges (checked in `ng_btsocket_hci_raw.c`)
@@ -50,9 +53,9 @@ system daemons; it does not replace them.
 ## Architecture
 
 ```
-  panel plugin (user) -- pkexec --> root helper (libexec, one-shot)
+  panel plugin, bsdbt -- pkexec --> bsdbt-helper (root, one-shot)
         |                               |  edit hcsecd.conf / bthidd.conf,
-        |                               |  SIGHUP, service, HCI disconnect
+        |                               |  service, HCI connect/auth/disconnect
         | HCI raw socket (read-only),   |
         | libsdp                        v
         v                     hcsecd (pairing)   bthidd (HID input)
@@ -63,10 +66,30 @@ system daemons; it does not replace them.
   with state, device list (paired / connected / nearby), scan, pair,
   disconnect, forget, Bluetooth on/off.  Scans, reads state and queries
   SDP directly; everything that needs root goes through the helper.
-- **Root helper** (C, installed in `libexec`, run with `pkexec`; a
-  polkit rule allows the active local session without a password, as
-  `org.xfce.power.backlight-helper` does).  Small, validates its
-  arguments, does one thing per call.
+- **bsdbt** (command line, user): the same as the panel plugin.
+- **bsdbt-helper** (C, installed in `libexec`, run with `pkexec`; the
+  polkit action `org.bsdbt.helper` allows the active local session
+  without a password, as `org.xfce.power.backlight-helper` does).  Small,
+  validates its arguments, does one thing per call:
+  - `pair ADDR PIN [NAME]`: writes the device and its PIN to
+    `hcsecd.conf` (hcsecd stopped meanwhile, so that an old link key can
+    be dropped), opens an ACL connection (HCI Create_Connection) and asks
+    for authentication (HCI Authentication_Requested).  hcsecd answers
+    the adapter's PIN and link key requests and receives the new link
+    key; a SIGHUP makes it save the key.  Success or the reason of
+    failure (wrong PIN, no answer) comes back from the
+    Authentication_Complete event.
+  - `hid ADDR [NAME]`: reads the HID service record with libsdp (as
+    `bthidcontrol query` does), checks the report descriptor with
+    libusbhid as bthidd will, writes it to `bthidd.conf` and restarts
+    bthidd, which then connects to the device.
+  - `remove ADDR`, `disconnect ADDR`, `power DEVICE on|off`.
+  - It writes `/var/db/bsdbt.devices`, a world-readable list of the
+    devices set up this way, because `hcsecd.conf` holds PINs and is
+    readable by root only.
+- Configuration blocks are replaced or removed one device at a time;
+  the rest of each file, comments included, is kept.  bsdbt's blocks
+  carry a `# managed by bsdbt` comment.
 - Pairing a keyboard: the plugin generates a random PIN, the helper
   writes it to `hcsecd.conf`, and the plugin shows it for the user to
   type on the keyboard.
@@ -90,7 +113,7 @@ system daemons; it does not replace them.
 | Step | Content | Done when |
 |---|---|---|
 | B0 | a command-line tool: enumerate adapters, state, BD_ADDR, connections; inquiry with names -- direct HCI/ioctl calls, no root | lists the adapter and nearby devices |
-| B1 | root helper + polkit: add/remove devices in `hcsecd.conf` and `bthidd.conf` (HID descriptor through libsdp), reload daemons, disconnect | a mouse pairs from the command line and reconnects after reboot |
+| B1 | `bsdbt-helper` + polkit: pair (hcsecd + HCI authentication), HID setup (libsdp + bthidd), remove, disconnect, power | a mouse pairs from the command line and reconnects after reboot |
 | B2 | XFCE panel plugin | the same from the panel icon |
 | later | Secure Simple Pairing (a daemon replacing `hcsecd`) | devices that refuse legacy PIN pairing pair |
 
@@ -111,6 +134,5 @@ system daemons; it does not replace them.
 
 ## Open questions
 
-- Names of the B0 tool and the root helper.
 - Test hardware: needs a Bluetooth Classic mouse; test on the A475
   (RTL8822BE Bluetooth, `ubt0`).  Light traffic works with Wi-Fi up.

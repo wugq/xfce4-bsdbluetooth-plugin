@@ -4,3 +4,5 @@ local/
 *.o
 *.core
 /*.tar.gz
+/bsdbt-helper
+/org.bsdbt.helper.policy
